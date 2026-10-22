@@ -1,0 +1,35 @@
+{
+  "format": 1,
+  "items": [
+    {
+      "kind": "charset",
+      "value": "upper"
+    },
+    {
+      "kind": "costume",
+      "name": "Dave",
+      "file": "gfx/sprite/Dave.spr",
+      "anims": [
+        {
+          "name": "walk_right",
+          "frames": [
+            "left3",
+            "right3",
+            "left2",
+            "left1",
+            "left12"
+          ],
+          "speed": "4"
+        },
+        {
+          "name": "talk",
+          "frames": [
+            "front12",
+            "front1"
+          ],
+          "speed": "6"
+        }
+      ]
+    }
+  ]
+}

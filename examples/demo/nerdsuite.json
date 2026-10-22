@@ -1,0 +1,8 @@
+{
+  "machine": "c64",
+  "main": "src/main.asm",
+  "dialects": {
+    "src/hello.bas": "v2"
+  },
+  "cpu": "6510"
+}

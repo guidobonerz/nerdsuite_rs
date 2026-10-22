@@ -1,0 +1,17 @@
+# Build output
+/target/
+
+# rustfmt backup files
+**/*.rs.bk
+
+# MSVC debug symbols (Windows)
+*.pdb
+
+# Environment / secrets
+.env
+
+# Editor and OS clutter
+.idea/
+.vscode/
+*.swp
+.DS_Store

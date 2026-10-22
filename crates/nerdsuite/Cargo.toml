@@ -1,0 +1,13 @@
+[package]
+name = "nerdsuite"
+edition.workspace = true
+version.workspace = true
+description = "An IDE for programs of 8 bit machines, in Rust and gpui"
+
+[dependencies]
+anyhow.workspace = true
+gpui.workspace = true
+gpui_platform.workspace = true
+nerdsuite_core.workspace = true
+serde_json.workspace = true
+unicode-segmentation.workspace = true

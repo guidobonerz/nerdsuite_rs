@@ -1,0 +1,65 @@
+# NerdSuite (Rust)
+
+The IDE for programs of 8 bit machines of [nerdsuite2](../nerdsuite2), in Rust, with
+[gpui](https://github.com/zed-industries/zed/tree/main/crates/gpui) - Zed's GPU-accelerated UI framework -
+in place of the browser and the Go server: one native program, no browser window.
+
+```sh
+cargo run -p nerdsuite -- examples/demo   # the demo project
+cargo run -p nerdsuite                    # the welcome page: open a folder, or the demo
+cargo test --workspace                    # the tests
+cargo build --release                     # target/release/nerdsuite(.exe)
+```
+
+gpui comes from Zed's repository at a fixed commit (`Cargo.toml`, `[workspace.dependencies]`), with
+`gpui_platform` for the windows of Windows, macOS and Linux. The first build fetches and compiles it (a few minutes).
+
+## What there is
+
+| | |
+|---|---|
+| **Shell** | the top bar, the rail of the ten views of nerdsuite2, the files of the project as a tree, a status bar (machine, CPU, main program, caret, messages); light or dark after the system, in nerdsuite2's colours |
+| **Project** | a folder with `nerdsuite.json` (keys this version does not know are kept); Open folder (Ctrl+O), Save (Ctrl+S) |
+| **Code** | the sources in tabs (middle button or × closes, ● marks unsaved changes); an editor with line numbers and the colours of ACME and BASIC; the caret and selection by keys and mouse (double click: a word), undo and redo, copy, cut, paste, the input methods of the system (IME); Enter keeps the indent (BASIC: proposes the next line number), Tab and Shift+Tab indent, Ctrl+/ comments lines in or out (`;`, BASIC: `rem`) |
+| **Hex** | any other file of the project as bytes: offsets (a .prg at its load address), hex, ASCII, PETSCII or screen codes |
+| **Build** | Ctrl+B or the button: the source in the editor (not an include), else the main program, with the texts not saved yet. An assembler source with the ACME compatible assembler (`!cpu` 6502 … 65816, the MEGA65's 45GS02, the Z80; the output of the machine without `!to`: .prg, .xex, AMSDOS, .p, /CMD, .adf, plain), a BASIC program with the tokenizer of its dialect. The program, the VICE label list (`.lbl`) and the listing (`.lst`) go into `build/`; the errors and warnings into the problems below the editor (a click goes to the line) and as marks on the lines |
+
+| **Run** | F5 or the button: builds, then starts the program in the emulator of the settings - nerdsuite2's `~/.nerdsuite/settings.json` (`preferred` per platform, `paths` of the tools; or the file `NERDSUITE_SETTINGS` names), else mimic when it runs the machine, else VICE or the first emulator found. mimic gets the program through its debug protocol (a .prg, a .xex, a 2600 cartridge, an Amiga ADF; a mimic of the same machine stays and takes the next one); VICE autostarts the .prg; Altirra, Stella, Mesen, FCEUX, bsnes, Snes9x, EightyOne, ZEsarUX, trs80gp, Xemu, WinUAE, FS-UAE and MAME get nerdsuite2's command lines. The emulator ends with NerdSuite |
+
+| **Debug** | F6 or the Debugger view: builds and starts the program in mimic with the breakpoints of the sources (a click on a line number sets one, a red dot). The Debugger view: continue, pause, step over, step into, step out, stop; the registers and the flags, the code from the PC with the labels and the lines of the sources, the stack, the memory (zero page, stack, screen, program, PC; ASCII, PETSCII or screen codes), the log. The line of the CPU is marked in the editor. Keys of nerdsuite2: F5/F8 continue, F8 pause, F10 step over, F11 step into, Shift+F11 step out, Shift+F5 stop. A .prg, a .xex or a 2600 cartridge |
+
+| **Disassembler** | a binary of the project (a .prg, a .nes, .sfc, .a26 with their header and vectors, any file of bytes): the disassembly on the left, the bytes on the right coloured by their type. Auto traces the code from its entry points (the SYS of the BASIC line, the load address, the vectors); a click selects a line or a byte (Shift extends), the buttons mark the selection as code or as data (bytes, words, ASCII, PETSCII, screen codes, chars, sprites, a bitmap, tiles) or unmark it; undo, redo. The registers and ROM routines of the machine name the operands (`sta VIC_BORDER`, `jsr CHROUT`) and a value stored to a register is told in words; Follow (or a double click) goes where an operand points, Back returns. Copy or save the disassembly as ACME source that assembles to the same bytes. The marks are kept in `nerdsuite.json` (`disassembler`), as nerdsuite2 keeps them |
+
+The graphics editors (Screen, Sprites, Chars, Tiles, Bitmap) and the Composer have their place in the
+rail and are not ported yet; nor are: the preview of the Disassembler (chars, sprites, a bitmap, tiles), its
+names of labels and its keys, the files from outside the project; debugging in VICE (its binary monitor),
+watchpoints, conditions, watches, the screen of the emulator in the Debugger view and the editing of
+registers and memory; breakpoints that move with the lines edited; in mimic the programs that
+are typed in (a CPC binary or listing, a ZX81 .p, an Atari BASIC listing); the disc images of the launcher
+(CPC .dsk, BBC .ssd); the 68000 of the assembler (the Amiga); the BASIC preprocessor (`#define`, `@if`,
+`DATA @embed`) and the label mode; KickAssembler, the toolchains, the Ultimate 64, the wizard,
+export/import and the handbook.
+
+`MIMIC_TEST=1 cargo test -p nerdsuite_core` also builds the demo and runs it in `mimic-headless`: its
+text on the screen (Run), a breakpoint, a step, continue and pause (Debug).
+
+## Files
+
+| file | content |
+|---|---|
+| `crates/nerdsuite_core` | what needs no window, tested on its own: the machines (`platform.rs`, from `platforms.js`), the project on disk (`project.rs`), the rows of the Hex view (`hex.rs`), the colours of the sources (`syntax.rs`) |
+| `crates/nerdsuite_core/src/acme` | the assembler (`acme.js`): tables of the 6502 family, passes, expressions, macros, pseudo ops, the Z80, the output formats, the disassembler; the tests of nerdsuite2 |
+| `crates/nerdsuite_core/src/basic` | the BASIC tokenizer and detokenizer of every dialect (`basic/*.js`, `zx81.js`): Commodore .prg, Atari/CPC/TRS-80/BBC listings, ZX81 .p files |
+| `crates/nerdsuite_core/src/build.rs` | the build of a program (`nsbuild.js`) |
+| `crates/nerdsuite_core/src/disasm.rs` | the analysis of the Disassembler (`disasm.js`): marks, the trace, BASIC, the layouts of files, the lines, the source |
+| `crates/nerdsuite_core/src/memmap` | the addresses of every machine and the bits of their registers (`memmap.js`); `data.rs` is generated from it |
+| `crates/nerdsuite/src/disasm_view.rs` | the Disassembler view |
+| `crates/nerdsuite_core/src/run` | Run: where the tools are and the settings (`tools.rs`, `backend/core`), mimic and its debug protocol (`mimic.rs`, `backend/mimic`), the choice of the emulator and the launcher's command lines (`mod.rs`, `backend/emu`) |
+| `crates/nerdsuite/src/main.rs` | the program: the window, the keys, the theme |
+| `crates/nerdsuite/src/workspace.rs` | the shell: top bar, rail, explorer, views, status bar, open and save |
+| `crates/nerdsuite/src/code_view.rs`, `editor.rs`, `text.rs` | the Code view, its editor surface (a gpui `Element` painting the lines in sight) and the text it edits |
+| `crates/nerdsuite/src/hex_view.rs` | the Hex view |
+| `crates/nerdsuite/src/workspace/debug.rs`, `debug_panel.rs` | Debug in the window: the session, the breakpoints, the Debugger view and its panels |
+| `crates/nerdsuite_core/src/run/debug.rs` | the debugger: a thread with mimic, its commands and what it saw (`Snapshot`) |
+| `crates/nerdsuite/src/theme.rs` | the colours of `m3.css` and `nerdsuite.css` |
+| `examples/demo` | the demo project of nerdsuite2 |
