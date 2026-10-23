@@ -6,6 +6,7 @@ description = "An IDE for programs of 8 bit machines, in Rust and gpui"
 
 [dependencies]
 anyhow.workspace = true
+cpal.workspace = true
 gpui.workspace = true
 gpui_platform.workspace = true
 nerdsuite_core.workspace = true

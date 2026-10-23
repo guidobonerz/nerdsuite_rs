@@ -19,11 +19,18 @@ macro_rules! secondary {
     };
 }
 
+mod audio;
+mod bitmap_view;
+mod chars_view;
 mod code_view;
+mod composer_view;
 mod debug_panel;
 mod disasm_view;
 mod editor;
 mod hex_view;
+mod pixels;
+mod screen_view;
+mod sprites_view;
 mod text;
 mod theme;
 mod workspace;

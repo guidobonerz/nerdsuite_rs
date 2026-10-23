@@ -4,10 +4,15 @@
 pub mod acme;
 pub mod basic;
 pub mod build;
+pub mod cpu6502;
 pub mod disasm;
+pub mod gfx;
 pub mod hex;
 pub mod memmap;
 pub mod platform;
 pub mod project;
 pub mod run;
+pub mod sid;
+pub mod song;
+pub mod songimport;
 pub mod syntax;

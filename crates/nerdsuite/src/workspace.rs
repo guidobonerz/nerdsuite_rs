@@ -25,6 +25,11 @@ use nerdsuite_core::{
 
 use crate::{
     code_view::{CodeView, CodeViewEvent},
+    bitmap_view::{BitmapEvent, BitmapView},
+    composer_view::{ComposerEvent, ComposerView},
+    chars_view::{CharsEvent, CharsView},
+    screen_view::{ScreenEvent, ScreenView},
+    sprites_view::{SpritesEvent, SpritesView},
     disasm_view::{DisasmEvent, DisasmView},
     hex_view::HexView,
     theme::theme,
@@ -153,6 +158,13 @@ pub struct Workspace {
     code: Entity<CodeView>,
     hex: Entity<HexView>,
     disasm: Entity<DisasmView>,
+    chars: Entity<CharsView>,
+    sprites: Entity<SpritesView>,
+    screen: Entity<ScreenView>,
+    bitmap: Entity<BitmapView>,
+    composer: Entity<ComposerView>,
+    /// the C64 ROM font, read once from VICE or mimic
+    rom_font: Option<Option<Vec<u8>>>,
     message: Option<(SharedString, bool)>,
     /// the errors and warnings of the last build
     problems: Vec<Problem>,
@@ -177,6 +189,46 @@ impl Workspace {
     pub fn new(project: Option<PathBuf>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let code = cx.new(CodeView::new);
         let disasm = cx.new(|_| DisasmView::new());
+        let chars = cx.new(|_| CharsView::new());
+        let sprites = cx.new(|_| SpritesView::new());
+        let screen = cx.new(|_| ScreenView::new());
+        let bitmap = cx.new(|_| BitmapView::new());
+        let composer = cx.new(ComposerView::new);
+        cx.subscribe(&composer, |this, _, event: &ComposerEvent, cx| {
+            if let ComposerEvent::OpenFile(path) = event {
+                this.open_song(path, cx);
+            }
+            cx.notify();
+        })
+        .detach();
+        cx.subscribe(&bitmap, |this, _, event: &BitmapEvent, cx| {
+            if let BitmapEvent::OpenFile(path) = event {
+                this.open_bitmap(path, cx);
+            }
+            cx.notify();
+        })
+        .detach();
+        cx.subscribe(&screen, |this, _, event: &ScreenEvent, cx| {
+            if let ScreenEvent::OpenFile(path) = event {
+                this.open_screen(path, cx);
+            }
+            cx.notify();
+        })
+        .detach();
+        cx.subscribe(&sprites, |this, _, event: &SpritesEvent, cx| {
+            if let SpritesEvent::OpenFile(path) = event {
+                this.open_sprites(path, cx);
+            }
+            cx.notify();
+        })
+        .detach();
+        cx.subscribe(&chars, |this, _, event: &CharsEvent, cx| {
+            if let CharsEvent::OpenFile(path) = event {
+                this.open_charset(path, cx);
+            }
+            cx.notify();
+        })
+        .detach();
         cx.subscribe(&disasm, |this, _, event: &DisasmEvent, cx| this.on_disasm_event(event, cx)).detach();
         cx.subscribe(&code, |this, _, event: &CodeViewEvent, cx| {
             if let CodeViewEvent::BreakpointToggled(path, line) = event {
@@ -212,6 +264,12 @@ impl Workspace {
             code,
             hex: cx.new(|_| HexView::default()),
             disasm,
+            chars,
+            sprites,
+            screen,
+            bitmap,
+            composer,
+            rom_font: None,
             message: None,
             problems: Vec::new(),
             runner: Default::default(),
@@ -295,11 +353,139 @@ impl Workspace {
                 code.open(path, Language::of(kind), || String::from_utf8_lossy(&bytes).into_owned(), window, cx)
             });
             self.sync_editor(path, cx);
+        } else if kind == FileKind::Bitmap {
+            self.open_bitmap(path, cx);
+        } else if kind == FileKind::Screen {
+            self.open_screen(path, cx);
+        } else if kind == FileKind::Sprite {
+            self.open_sprites(path, cx);
+        } else if kind == FileKind::Charset {
+            self.open_charset(path, cx);
+        } else if kind == FileKind::Song {
+            self.open_song(path, cx);
+        } else if is_foreign_song(path) {
+            // a SID tune, a MIDI file: imported as a new song
+            self.view = View::Composer;
+            self.composer.update(cx, |c, cx| c.import(path.to_owned(), bytes, true, cx));
         } else if self.view == View::Disassembler && is_binary(path) {
             self.open_in_disasm(path, bytes, cx);
         } else {
             self.view = View::Hex;
             self.hex.update(cx, |hex, cx| hex.open(path.to_owned(), bytes, cx));
+        }
+        cx.notify();
+    }
+
+    /// The files of the project of a kind.
+    fn files_of(&self, kind: FileKind) -> Vec<String> {
+        self.project
+            .as_ref()
+            .map(|p| p.files.iter().filter(|f| !f.is_dir && FileKind::of(f.path.as_ref()) == kind).map(|f| f.path.clone()).collect())
+            .unwrap_or_default()
+    }
+
+    fn open_bitmap(&mut self, path: &str, cx: &mut Context<Self>) {
+        let Some(project) = self.project.as_ref() else { return };
+        if self.bitmap.read(cx).is_dirty() && self.bitmap.read(cx).path() != Some(path) {
+            self.message = Some(("Save the picture before another one is opened (Ctrl+S).".into(), true));
+            cx.notify();
+            return;
+        }
+        match project.read(path) {
+            Ok(bytes) => {
+                self.selected_file = Some(path.to_owned());
+                self.view = View::Bitmap;
+                self.bitmap.update(cx, |b, cx| b.open(path.to_owned(), &bytes, cx));
+            }
+            Err(e) => self.message = Some((format!("{e:#}").into(), true)),
+        }
+        cx.notify();
+    }
+
+    fn open_screen(&mut self, path: &str, cx: &mut Context<Self>) {
+        let Some(project) = self.project.as_ref() else { return };
+        if self.screen.read(cx).is_dirty() && self.screen.read(cx).path() != Some(path) {
+            self.message = Some(("Save the screen before another one is opened (Ctrl+S).".into(), true));
+            cx.notify();
+            return;
+        }
+        match project.read(path) {
+            Ok(bytes) => {
+                self.selected_file = Some(path.to_owned());
+                self.view = View::Screen;
+                self.screen.update(cx, |s, cx| s.open(path.to_owned(), &bytes, cx));
+            }
+            Err(e) => self.message = Some((format!("{e:#}").into(), true)),
+        }
+        cx.notify();
+    }
+
+    /// The charset of the screen in front: the one of the Chars view when it is open there (its changes
+    /// show at once), else its file, else the ROM font.
+    fn screen_charset(&mut self, cx: &mut Context<Self>) {
+        let Some(name) = self.screen.read(cx).charset_path() else { return };
+        let bytes = if name.is_empty() {
+            let rom = self.rom_font.get_or_insert_with(nerdsuite_core::gfx::c64_rom_font);
+            rom.as_ref().map(|r| r[..2048].to_vec())
+        } else if self.chars.read(cx).path() == Some(name.as_str()) {
+            Some(self.chars.read(cx).bytes().to_vec())
+        } else {
+            self.project.as_ref().and_then(|p| p.read(&name).ok()).map(|b| nerdsuite_core::gfx::Charset::from_file(&b).bytes)
+        };
+        let bytes = bytes.unwrap_or_else(|| vec![0; 2048]);
+        self.screen.update(cx, |s, cx| s.set_charset(&bytes, &name, cx));
+    }
+
+    fn open_sprites(&mut self, path: &str, cx: &mut Context<Self>) {
+        let Some(project) = self.project.as_ref() else { return };
+        if self.sprites.read(cx).is_dirty() && self.sprites.read(cx).path() != Some(path) {
+            self.message = Some(("Save the sprites before others are opened (Ctrl+S).".into(), true));
+            cx.notify();
+            return;
+        }
+        match project.read(path) {
+            Ok(bytes) => {
+                self.selected_file = Some(path.to_owned());
+                self.view = View::Sprites;
+                self.sprites.update(cx, |s, cx| s.open(path.to_owned(), &bytes, cx));
+            }
+            Err(e) => self.message = Some((format!("{e:#}").into(), true)),
+        }
+        cx.notify();
+    }
+
+    fn open_charset(&mut self, path: &str, cx: &mut Context<Self>) {
+        let Some(project) = self.project.as_ref() else { return };
+        if self.chars.read(cx).is_dirty() && self.chars.read(cx).path() != Some(path) {
+            self.message = Some(("Save the charset before another one is opened (Ctrl+S).".into(), true));
+            cx.notify();
+            return;
+        }
+        match project.read(path) {
+            Ok(bytes) => {
+                self.selected_file = Some(path.to_owned());
+                self.view = View::Chars;
+                self.chars.update(cx, |c, cx| c.open(path.to_owned(), &bytes, cx));
+            }
+            Err(e) => self.message = Some((format!("{e:#}").into(), true)),
+        }
+        cx.notify();
+    }
+
+    fn open_song(&mut self, path: &str, cx: &mut Context<Self>) {
+        let Some(project) = self.project.as_ref() else { return };
+        if self.composer.read(cx).is_dirty() && self.composer.read(cx).path() != Some(path) {
+            self.message = Some(("Save the song before another one is opened (Ctrl+S).".into(), true));
+            cx.notify();
+            return;
+        }
+        match project.read(path) {
+            Ok(bytes) => {
+                self.selected_file = Some(path.to_owned());
+                self.view = View::Composer;
+                self.composer.update(cx, |c, cx| c.open(path.to_owned(), &bytes, cx));
+            }
+            Err(e) => self.message = Some((format!("{e:#}").into(), true)),
         }
         cx.notify();
     }
@@ -567,6 +753,50 @@ impl Workspace {
             .cloned()
             .collect::<Vec<_>>();
         let mut saved = 0;
+        // the charset of the Chars view, the costume of the Sprites view
+        let graphics = [
+            self.chars.read(cx).unsaved().map(|f| (f, 0)),
+            self.sprites.read(cx).unsaved().map(|f| (f, 1)),
+            self.screen.read(cx).unsaved().map(|f| (f, 2)),
+            self.bitmap.read(cx).unsaved().map(|f| (f, 3)),
+        ];
+        for ((path, bytes), which) in graphics.into_iter().flatten() {
+            match project.write(&path, &bytes) {
+                Ok(()) => {
+                    match which {
+                        0 => self.chars.update(cx, |c, cx| c.mark_saved(cx)),
+                        1 => self.sprites.update(cx, |s, cx| s.mark_saved(cx)),
+                        2 => self.screen.update(cx, |s, cx| s.mark_saved(cx)),
+                        _ => self.bitmap.update(cx, |b, cx| b.mark_saved(cx)),
+                    }
+                    saved += 1;
+                }
+                Err(error) => {
+                    self.message = Some((format!("{error:#}").into(), true));
+                    cx.notify();
+                    return;
+                }
+            }
+        }
+        // the song of the Composer: a new one gets its file
+        if let Some((path, bytes)) = self.composer.read(cx).unsaved() {
+            let new = !project.files.iter().any(|f| f.path == path);
+            match project.write(&path, &bytes) {
+                Ok(()) => {
+                    self.composer.update(cx, |c, cx| c.mark_saved(path, cx));
+                    saved += 1;
+                    if new && let Some(project) = self.project.as_mut() {
+                        project.rescan().ok();
+                    }
+                }
+                Err(error) => {
+                    self.message = Some((format!("{error:#}").into(), true));
+                    cx.notify();
+                    return;
+                }
+            }
+        }
+        let Some(project) = self.project.as_ref() else { return };
         for editor in dirty {
             let (path, text) = {
                 let editor = editor.read(cx);
@@ -598,6 +828,9 @@ impl Workspace {
         if view == View::Code {
             window.focus(&self.code.focus_handle(cx), cx);
         }
+        if view == View::Composer {
+            window.focus(&self.composer.focus_handle(cx), cx);
+        }
         cx.notify();
     }
 
@@ -612,7 +845,7 @@ impl Workspace {
 
     fn render_top_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = *theme(cx);
-        let dirty = self.code.read(cx).has_unsaved(cx);
+        let dirty = self.code.read(cx).has_unsaved(cx) || self.chars.read(cx).is_dirty() || self.sprites.read(cx).is_dirty() || self.screen.read(cx).is_dirty() || self.bitmap.read(cx).is_dirty() || self.composer.read(cx).is_dirty();
         let project = self.project.as_ref();
         div()
             .flex()
@@ -796,6 +1029,47 @@ impl Workspace {
                 .when(!self.problems.is_empty(), |el| el.child(self.render_problems(cx)))
                 .into_any_element(),
             View::Hex => self.hex.clone().into_any_element(),
+            View::Screen => self.screen.clone().into_any_element(),
+            View::Bitmap => self.bitmap.clone().into_any_element(),
+            View::Composer => {
+                let files = self.files_of(FileKind::Song);
+                let first = files.first().cloned();
+                self.composer.update(cx, |c, cx| c.set_files(files, cx));
+                if !self.composer.read(cx).has_song()
+                    && let Some(first) = first
+                    && let Some(project) = &self.project
+                    && let Ok(bytes) = project.read(&first)
+                {
+                    self.composer.update(cx, |c, cx| c.open(first, &bytes, cx));
+                }
+                self.composer.clone().into_any_element()
+            }
+            View::Sprites => {
+                let files = self.files_of(FileKind::Sprite);
+                let first = files.first().cloned();
+                self.sprites.update(cx, |s, cx| s.set_files(files, cx));
+                if self.sprites.read(cx).path().is_none()
+                    && let Some(first) = first
+                    && let Some(project) = &self.project
+                    && let Ok(bytes) = project.read(&first)
+                {
+                    self.sprites.update(cx, |s, cx| s.open(first, &bytes, cx));
+                }
+                self.sprites.clone().into_any_element()
+            }
+            View::Chars => {
+                let files = self.files_of(FileKind::Charset);
+                let first = files.first().cloned();
+                self.chars.update(cx, |c, cx| c.set_files(files, cx));
+                if self.chars.read(cx).path().is_none()
+                    && let Some(first) = first
+                    && let Some(project) = &self.project
+                    && let Ok(bytes) = project.read(&first)
+                {
+                    self.chars.update(cx, |c, cx| c.open(first, &bytes, cx));
+                }
+                self.chars.clone().into_any_element()
+            }
             View::Disassembler => {
                 let files = self.binaries();
                 self.disasm.update(cx, |d, cx| d.set_files(files, cx));
@@ -934,6 +1208,37 @@ impl Render for Workspace {
         if appearance_theme.dark != theme(cx).dark {
             cx.set_global(appearance_theme);
         }
+        // another view: the song stops
+        if self.view != View::Composer {
+            self.composer.update(cx, |c, cx| c.leave(cx));
+        }
+        // the Bitmap view: its files, the first one when none is open
+        if self.view == View::Bitmap {
+            let files = self.files_of(FileKind::Bitmap);
+            let first = files.first().cloned();
+            self.bitmap.update(cx, |b, cx| b.set_files(files, cx));
+            if self.bitmap.read(cx).path().is_none()
+                && let Some(first) = first
+                && let Some(project) = &self.project
+                && let Ok(bytes) = project.read(&first)
+            {
+                self.bitmap.update(cx, |b, cx| b.open(first, &bytes, cx));
+            }
+        }
+        // the Screen view: its files, the first one when none is open, its charset
+        if self.view == View::Screen {
+            let files = self.files_of(FileKind::Screen);
+            let first = files.first().cloned();
+            self.screen.update(cx, |s, cx| s.set_files(files, cx));
+            if self.screen.read(cx).path().is_none()
+                && let Some(first) = first
+                && let Some(project) = &self.project
+                && let Ok(bytes) = project.read(&first)
+            {
+                self.screen.update(cx, |s, cx| s.open(first, &bytes, cx));
+            }
+            self.screen_charset(cx);
+        }
         let theme = *theme(cx);
 
         let body = match self.project.as_ref() {
@@ -972,4 +1277,10 @@ impl Render for Workspace {
             .child(body)
             .child(self.render_status_bar(cx))
     }
+}
+
+/// A song of another program the Composer imports: a SID tune, a MIDI file.
+fn is_foreign_song(path: &str) -> bool {
+    let lower = path.to_ascii_lowercase();
+    [".sid", ".mid", ".midi", ".rmi"].iter().any(|e| lower.ends_with(e))
 }

@@ -10,6 +10,7 @@ version = "0.1.0"
 gpui = { git = "https://github.com/zed-industries/zed", rev = "cfb894a5dde8ccf3fba1659164f47fdd1c024e2e" }
 gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "cfb894a5dde8ccf3fba1659164f47fdd1c024e2e", features = ["font-kit", "wayland", "x11"] }
 anyhow = "1"
+cpal = "0.15"
 indexmap = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
